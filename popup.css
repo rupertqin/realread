@@ -1,4 +1,18 @@
+body {
+  width:  400px;
+  height: 500px;
+}
 button {
   outline: none;
   margin: 10px;
+}
+
+.loading {
+  visibility: hidden;
+}
+
+.loading::before {
+  visibility: visible;
+  content:  'loading...';
+  text-align: center;
 }
