@@ -1,6 +1,7 @@
 body {
-  width:  400px;
-  height: 500px;
+  width:  600px;
+  height: 900px;
+  padding: 10px;
 }
 button {
   outline: none;
@@ -15,4 +16,9 @@ button {
   visibility: visible;
   content:  'loading...';
   text-align: center;
+}
+
+#content {
+  font-size: 1.4em;
+  font-family: "MiloTE","MiloTESec",Charter,"Bitstream Charter","Iowan Old Style","Calisto MT",serif;;
 }
