@@ -1,11 +1,59 @@
-body {
-  width:  600px;
-  height: 900px;
-  padding: 10px;
+/* The popup is capped at 600x600 by Chrome. Pin the window size on <html>,
+   then let <body> be a column: the article scrolls, the summary bar stays. */
+html {
+  width: 600px;
+  height: 600px;
+  overflow: hidden;
 }
-button {
-  outline: none;
-  margin: 10px;
+
+body {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+/* Brand strip: mark and wordmark sit on the same 30px left axis as the body
+   copy, so the whole popup reads as one column. The wordmark stays at label
+   scale — small, grey, wide tracking — so it never competes with the article
+   headline 60px below it. Same hairline as the footer: the article is bound
+   between the two rules. */
+#brand {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 30px;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+  color: #111827;
+}
+
+#mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+#wordmark {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  color: #6b7280;
+}
+
+/* 左右 30px 的留白把文本行宽收到约 525px（14px 字号下约 73 个字符），
+   仍在正文可读区间内；上下留白略大于左右，视觉重心不会顶到边。 */
+#content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 30px 20px;
+  font-size: 14px;
+  line-height: 1.65;
+  font-family: "MiloTE","MiloTESec",Charter,"Bitstream Charter","Iowan Old Style","Calisto MT",serif;;
 }
 
 .loading {
@@ -18,7 +66,115 @@ button {
   text-align: center;
 }
 
-#content {
-  font-size: 1.4em;
-  font-family: "MiloTE","MiloTESec",Charter,"Bitstream Charter","Iowan Old Style","Calisto MT",serif;;
+/* Paragraphs own the gap below them, so the first line of the article is not
+   pushed down and there is never a doubled gap between two paragraphs. */
+#content p {
+  margin: 0 0 1.1em;
+}
+
+/* Article images are treated as figures: they own a line and a little air.
+   Readability output keeps them as block-level content, not as inline icons. */
+#content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2em auto;
+}
+
+#content figure {
+  margin: 1.2em 0;
+}
+
+#content figcaption {
+  margin-top: 0.6em;
+  font-size: 0.9em;
+  opacity: 0.72;
+}
+
+/* Headings inherit the article font, but not the browser's oversized defaults.
+   Space above a heading is larger than the paragraph gap, so a section reads as
+   a break rather than as another paragraph. */
+#content h1,
+#content h2,
+#content h3 {
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+
+#content h1 {
+  font-size: 1.35em;
+}
+
+#content h2 {
+  font-size: 1.15em;
+}
+
+#content h3 {
+  font-size: 1.05em;
+}
+
+#content > :first-child {
+  margin-top: 0;
+}
+
+#content[data-state="error"] {
+  font-family: system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #b3261e;
+}
+
+/* Summary bar: one muted line of facts on the left, one quiet action on the
+   right. The hairline is what separates it from the article, not a shadow. */
+#bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 30px 10px;
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
+  color: #6b7280;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1;
+}
+
+#bar[hidden] {
+  display: none;
+}
+
+#meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+#copy {
+  flex: none;
+  padding: 5px 13px;
+  border: 1px solid rgba(17, 24, 39, 0.14);
+  border-radius: 999px;
+  background: #ffffff;
+  color: #111827;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+#copy:hover {
+  background: #f4f5f7;
+  border-color: rgba(17, 24, 39, 0.22);
+}
+
+#copy:active {
+  background: #eaebef;
+}
+
+#copy:focus-visible {
+  outline: 2px solid #2f9e68;
+  outline-offset: 1px;
 }

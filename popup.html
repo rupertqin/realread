@@ -1,15 +1,29 @@
 <!DOCTYPE html>
 <html>
   <head>
+    <meta charset="utf-8">
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
-    <div id="content"></div>
-    <div>
-      <input id="url" placeholder="url" />
-      <button id="changeColor">confirm</button>
-    </div>
+    <header id="brand">
+      <!-- Same R as the extension icon, without the tile: the icon already
+           carries the container, here the mark is set in ink like type. -->
+      <svg id="mark" viewBox="0 0 128 128" role="img" aria-label="RealRead">
+        <g transform="translate(0,-2)" fill="none" stroke="currentColor" stroke-width="15" stroke-linecap="butt" stroke-linejoin="miter">
+          <path d="M38 94 V34 H72 A19 19 0 0 1 72 72 H38"/>
+          <path d="M66 72 L92 98"/>
+        </g>
+      </svg>
+      <span id="wordmark">REALREAD</span>
+    </header>
+    <main id="content"></main>
+    <footer id="bar" hidden>
+      <span id="meta"></span>
+      <button id="copy" type="button">复制</button>
+    </footer>
     <script src="readability.js"></script>
+    <script src="sanitize.js"></script>
+    <script src="article.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
