@@ -28,32 +28,20 @@ class ArticleError extends Error {
  * @param {object} [deps] Injectables, for tests.
  * @param {Function} [deps.fetch] fetch-compatible function.
  * @param {Function} [deps.parseDocument] HTML string -> Document.
+ * @param {Function} [deps.pageSource] url -> { href, html } | null. Lets the
+ *   caller supply the markup from the tab itself, which can be served from the
+ *   tab's own HTTP cache instead of costing a second round trip.
  * @returns {Promise<object>} Readability article, plus `url` (normalized).
  */
 async function fetchArticle(url, deps = {}) {
-  const doFetch = deps.fetch || ((target) => fetch(target));
+  const doFetch = deps.fetch || ((target, init) => fetch(target, init));
   const parseDocument = deps.parseDocument || ((html) => {
     return new DOMParser().parseFromString(html, "text/html");
   });
 
   const target = normalizeArticleUrl(url);
-
-  let response;
-  try {
-    response = await doFetch(target.href);
-  } catch (err) {
-    throw new ArticleError("network", "Could not reach that page.");
-  }
-  if (!response.ok) {
-    throw new ArticleError("http", `That page returned HTTP ${response.status}.`);
-  }
-
-  let html;
-  try {
-    html = await response.text();
-  } catch (err) {
-    throw new ArticleError("network", "Could not read the response body.");
-  }
+  const html = (await readPageSource(deps.pageSource, target.href)) ||
+    (await requestHtml(doFetch, target.href));
 
   let article;
   try {
@@ -70,6 +58,63 @@ async function fetchArticle(url, deps = {}) {
 }
 
 /**
+ * The markup offered by the tab is only usable when it belongs to the document
+ * we were asked to read; anything else (redirects, pushState, an iframe) means
+ * falling back to a request.
+ */
+async function readPageSource(pageSource, url) {
+  if (typeof pageSource !== "function") {
+    return null;
+  }
+  try {
+    const page = await pageSource(url);
+    if (!page || typeof page.html !== "string" || !page.html.trim()) {
+      return null;
+    }
+    return isSameDocument(page.href, url) ? page.html : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function isSameDocument(candidateHref, url) {
+  try {
+    const candidate = new URL(candidateHref);
+    const wanted = new URL(url);
+    candidate.hash = "";
+    wanted.hash = "";
+    return candidate.href === wanted.href;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function requestHtml(doFetch, url) {
+  let response;
+  try {
+    response = await doFetch(url, {
+      // "fetch" means fetch: always go out to the server. With `force-cache`
+      // an earlier copy in this context's HTTP cache was served silently, so
+      // the source toggle looked like it did nothing at all.
+      cache: "reload",
+      // Carry the reader's own session: paywalled and logged-in articles come
+      // back as the page he is actually looking at, not the logged-out shell.
+      credentials: "include"
+    });
+  } catch (err) {
+    throw new ArticleError("network", "Could not reach that page.");
+  }
+  if (!response.ok) {
+    throw new ArticleError("http", `That page returned HTTP ${response.status}.`);
+  }
+  try {
+    return await response.text();
+  } catch (err) {
+    throw new ArticleError("network", "Could not read the response body.");
+  }
+}
+
+/* -------------------------------------------------------------- parsing ---
  * Readability resolves relative image and link URLs against `doc.baseURI`,
  * which for a DOMParser document is *this* page — i.e. the extension's own
  * chrome-extension:// URL. Every relatively linked image would then point at
@@ -78,6 +123,7 @@ async function fetchArticle(url, deps = {}) {
  * Declaring the article's URL as <base> makes Readability absolutise against
  * the real site instead. Skipped when the page ships its own <base>.
  */
+
 function injectBaseElement(html, articleUrl) {
   if (/<base[\s>]/i.test(html)) {
     return html;

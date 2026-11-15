@@ -15,6 +15,10 @@
         </g>
       </svg>
       <span id="wordmark">REALREAD</span>
+      <div id="mode" role="group" aria-label="获取方式">
+        <button id="mode-document" type="button" data-mode="document" aria-pressed="true" title="读取当前页面已渲染的 HTML，不发请求">页面</button>
+        <button id="mode-fetch" type="button" data-mode="fetch" aria-pressed="false" title="重新请求服务器，拿到原始 HTML">请求</button>
+      </div>
     </header>
     <main id="content"></main>
     <footer id="bar" hidden>

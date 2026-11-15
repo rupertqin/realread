@@ -2,26 +2,144 @@ const content = document.getElementById("content");
 const bar = document.getElementById("bar");
 const meta = document.getElementById("meta");
 const copyButton = document.getElementById("copy");
+const modeButtons = Array.from(document.querySelectorAll("#mode button"));
 
 const MAX_FONT_FAMILY_LENGTH = 200;
 const COPY_LABEL = "复制";
 const COPIED_LABEL = "已复制";
-const COPY_FEEDBACK_MS = 1500;
+const FEEDBACK_MS = 1500;
+
+// Where the article HTML comes from.
+//
+// "document" is the default everywhere, so it is never stored. Only a switch to
+// "fetch" is remembered, and only for the host it was made on — the store is a
+// set of hosts that opted out of the default. Switching back deletes the entry
+// instead of writing "document", which keeps the store empty for anyone who
+// never changes anything.
+const SOURCE_STORAGE_KEY = "realread:sources";
+const SOURCE_DOCUMENT = "document";
+const SOURCE_FETCH = "fetch";
+const SOURCES = [SOURCE_DOCUMENT, SOURCE_FETCH];
+const DEFAULT_SOURCE = SOURCE_DOCUMENT;
+const SOURCE_HOSTS_LIMIT = 100;
 
 // Characters per minute, used for the reading-time estimate.
 const CJK_CHARS_PER_MINUTE = 400;
 const LATIN_CHARS_PER_MINUTE = 1000;
 const CJK_RATIO_THRESHOLD = 0.2;
 
-chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
-  load(tab);
-});
+let currentTab = null;
+let currentSource = DEFAULT_SOURCE;
+let currentHost = null;
+let sourceHosts = {};
+
+start();
+
+async function start() {
+  const [tabs, hosts] = await Promise.all([
+    chrome.tabs.query({ active: true, currentWindow: true }),
+    readSourceHosts()
+  ]);
+  sourceHosts = hosts;
+  currentTab = tabs[0] || null;
+  currentHost = hostOf(currentTab && currentTab.url);
+  currentSource = sourceFor(currentHost);
+  paintSource(currentSource);
+  load(currentTab);
+}
 
 copyButton.addEventListener("click", () => {
   copyText(content.innerText);
 });
 
+for (const button of modeButtons) {
+  button.addEventListener("click", () => selectSource(button.dataset.mode));
+}
+
+async function selectSource(source) {
+  if (!SOURCES.includes(source) || source === currentSource) {
+    return;
+  }
+  currentSource = source;
+  paintSource(source);
+  await rememberSource(currentHost, source);
+  if (currentTab) {
+    load(currentTab);
+  }
+}
+
+function paintSource(source) {
+  for (const button of modeButtons) {
+    const active = button.dataset.mode === source;
+    button.setAttribute("aria-pressed", String(active));
+  }
+}
+
+// Hostname only: ports and schemes are different addresses of the same site,
+// but subdomains stay separate, because that is what the user named.
+function hostOf(url) {
+  try {
+    return new URL(String(url)).hostname || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function sourceFor(host) {
+  return host && sourceHosts[host] === SOURCE_FETCH ? SOURCE_FETCH : DEFAULT_SOURCE;
+}
+
+async function rememberSource(host, source) {
+  if (!host) {
+    return;
+  }
+  if (source === SOURCE_FETCH) {
+    const known = Object.keys(sourceHosts);
+    if (!(host in sourceHosts) && known.length >= SOURCE_HOSTS_LIMIT) {
+      delete sourceHosts[known[0]];
+    }
+    sourceHosts[host] = SOURCE_FETCH;
+  } else {
+    delete sourceHosts[host];
+  }
+  await writeSourceHosts(sourceHosts);
+}
+
+async function readSourceHosts() {
+  try {
+    const stored = await chrome.storage.local.get(SOURCE_STORAGE_KEY);
+    const value = stored && stored[SOURCE_STORAGE_KEY];
+    if (!value || typeof value !== "object") {
+      return {};
+    }
+    const hosts = {};
+    for (const [host, mode] of Object.entries(value)) {
+      if (mode === SOURCE_FETCH) {
+        hosts[host] = SOURCE_FETCH;
+      }
+    }
+    return hosts;
+  } catch (err) {
+    return {};
+  }
+}
+
+async function writeSourceHosts(hosts) {
+  try {
+    if (Object.keys(hosts).length === 0) {
+      // Nothing to remember: drop the key so storage stays clean.
+      await chrome.storage.local.remove(SOURCE_STORAGE_KEY);
+    } else {
+      await chrome.storage.local.set({ [SOURCE_STORAGE_KEY]: { ...hosts } });
+    }
+  } catch (err) {
+    // The toggle still works for this session; it just will not be remembered.
+  }
+}
+
 async function load(tab) {
+  currentTab = tab || null;
+  currentHost = hostOf(currentTab && currentTab.url);
   content.classList.add("loading");
   content.removeAttribute("data-state");
   bar.hidden = true;
@@ -30,8 +148,11 @@ async function load(tab) {
     if (!tab || !tab.url) {
       throw new ArticleError("url", "This page cannot be read.");
     }
+    const deps = currentSource === SOURCE_DOCUMENT
+      ? { pageSource: () => readDocumentHtml(tab.id) }
+      : {};
     const [article, fontFamily] = await Promise.all([
-      fetchArticle(tab.url),
+      fetchArticle(tab.url, deps),
       readPageFontFamily(tab.id)
     ]);
     renderArticle(content, article, { fontFamily });
@@ -120,7 +241,7 @@ async function copyText(text) {
     copied = copyTextFromTextarea(value);
   }
   if (copied) {
-    flashCopyLabel();
+    flashLabel(copyButton, COPIED_LABEL, COPY_LABEL);
   }
 }
 
@@ -143,12 +264,13 @@ function copyTextFromTextarea(value) {
   return copied;
 }
 
-function flashCopyLabel() {
-  copyButton.textContent = COPIED_LABEL;
-  clearTimeout(flashCopyLabel.timer);
-  flashCopyLabel.timer = setTimeout(() => {
-    copyButton.textContent = COPY_LABEL;
-  }, COPY_FEEDBACK_MS);
+// Confirms an action on the button itself, then restores its label.
+function flashLabel(button, temporary, permanent) {
+  button.textContent = temporary;
+  clearTimeout(button.feedbackTimer);
+  button.feedbackTimer = setTimeout(() => {
+    button.textContent = permanent;
+  }, FEEDBACK_MS);
 }
 
 function hasMatchingHeading(el, title) {
@@ -182,6 +304,43 @@ function findLeadingHeading(el) {
 
 function normalizeTitleText(text) {
   return (text || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * "document" source: the markup of the page as it currently exists, taken from
+ * the tab itself. Costs no request at all, and works on client-rendered pages
+ * where the server response carries nothing useful. The trade-off is that it
+ * is the live DOM, so anything a script inserted or removed is reflected here,
+ * and the original source is not recoverable from it.
+ *
+ * Returns null when the page cannot be scripted (chrome://, PDF viewer, the
+ * web store), and fetchArticle then falls back to a request.
+ */
+async function readDocumentHtml(tabId) {
+  if (typeof tabId !== "number" || !chrome.scripting) {
+    return null;
+  }
+  try {
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: serializeDocumentHtml
+    });
+    const value = injection && injection.result;
+    return value && typeof value.html === "string" ? value : null;
+  } catch (err) {
+    console.info("[RealRead] page cannot be scripted:", err.message);
+    return null;
+  }
+}
+
+// Runs in the page. Scripts are dropped: Readability discards them anyway, and
+// they are usually most of the bytes of a modern page.
+function serializeDocumentHtml() {
+  const clone = document.documentElement.cloneNode(true);
+  for (const script of clone.querySelectorAll("script")) {
+    script.remove();
+  }
+  return { href: location.href, html: "<!DOCTYPE html>" + clone.outerHTML };
 }
 
 /**

@@ -36,6 +36,47 @@ body {
   flex: none;
 }
 
+/* Source switch. A segmented control rather than a checkbox: both states are
+   named, so nobody has to guess what "on" means. It sits at the far right of
+   the brand strip, away from the copy action, because it changes what the
+   article is rather than what you do with it. */
+#mode {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #f3f4f6;
+}
+
+#mode button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: #6b7280;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+#mode button[aria-pressed="true"] {
+  background: #ffffff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.08);
+}
+
+#mode button:hover:not([aria-pressed="true"]) {
+  color: #4b5563;
+}
+
+#mode button:focus-visible {
+  outline: 2px solid #2f9e68;
+  outline-offset: 1px;
+}
+
 #wordmark {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 11px;
