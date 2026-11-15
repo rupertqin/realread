@@ -57,7 +57,7 @@ async function fetchArticle(url, deps = {}) {
 
   let article;
   try {
-    article = new Readability(parseDocument(html)).parse();
+    article = new Readability(parseDocument(injectBaseElement(html, target.href))).parse();
   } catch (err) {
     throw new ArticleError("parse", `Could not parse that page (${err.message}).`);
   }
@@ -67,6 +67,29 @@ async function fetchArticle(url, deps = {}) {
 
   article.url = target.href;
   return article;
+}
+
+/**
+ * Readability resolves relative image and link URLs against `doc.baseURI`,
+ * which for a DOMParser document is *this* page — i.e. the extension's own
+ * chrome-extension:// URL. Every relatively linked image would then point at
+ * a file the extension cannot load and get dropped by the sanitizer.
+ *
+ * Declaring the article's URL as <base> makes Readability absolutise against
+ * the real site instead. Skipped when the page ships its own <base>.
+ */
+function injectBaseElement(html, articleUrl) {
+  if (/<base[\s>]/i.test(html)) {
+    return html;
+  }
+  const tag = `<base href="${articleUrl.replace(/"/g, "&quot;")}">`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (head) => head + tag);
+  }
+  if (/<html[^>]*>/i.test(html)) {
+    return html.replace(/<html[^>]*>/i, (root) => `${root}<head>${tag}</head>`);
+  }
+  return tag + html;
 }
 
 function normalizeArticleUrl(url) {
