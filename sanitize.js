@@ -117,17 +117,74 @@ function copySanitizedAttributes(source, target, baseUrl) {
 }
 
 // Drop the individual candidates that fail, keep the rest of the set.
+// srcset URLs may themselves contain commas (Substack's image transform URLs
+// do), so candidates must be tokenised as URL-then-descriptors rather than
+// split on every comma.
 function sanitizeSrcset(value, baseUrl) {
-  const candidates = value.split(",").map((candidate) => candidate.trim()).filter(Boolean);
+  const candidates = parseSrcset(value);
   const safe = [];
-  for (const candidate of candidates) {
-    const [rawUrl, ...descriptors] = candidate.split(/\s+/);
+  for (const { url: rawUrl, descriptors } of candidates) {
     const url = safeUrlValue(rawUrl, SANITIZE_URL_SCHEMES.srcset, baseUrl);
     if (url && descriptors.every((descriptor) => /^\d+(\.\d+)?[wx]$/.test(descriptor))) {
       safe.push([url, ...descriptors].join(" "));
     }
   }
   return safe.join(", ");
+}
+
+// Follows the srcset grammar closely enough for real-world markup: skip
+// separators, take one URL up to whitespace, then descriptors up to the next
+// comma. Trailing commas on a bare URL are separators, not part of the URL.
+function parseSrcset(value) {
+  const input = String(value || "");
+  const candidates = [];
+  let i = 0;
+  const isSpace = (char) => /\s/.test(char);
+
+  while (i < input.length) {
+    while (i < input.length && (isSpace(input[i]) || input[i] === ",")) {
+      i++;
+    }
+    if (i >= input.length) {
+      break;
+    }
+
+    const urlStart = i;
+    while (i < input.length && !isSpace(input[i])) {
+      i++;
+    }
+    const url = input.slice(urlStart, i).replace(/,+$/, "");
+    while (i < input.length && isSpace(input[i])) {
+      i++;
+    }
+
+    const descriptorsStart = i;
+    let depth = 0;
+    while (i < input.length) {
+      const char = input[i];
+      if (char === "(") {
+        depth++;
+      } else if (char === ")" && depth > 0) {
+        depth--;
+      } else if (char === "," && depth === 0) {
+        break;
+      }
+      i++;
+    }
+    const descriptors = input
+      .slice(descriptorsStart, i)
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+
+    if (url) {
+      candidates.push({ url, descriptors });
+    }
+    if (input[i] === ",") {
+      i++;
+    }
+  }
+  return candidates;
 }
 
 /**

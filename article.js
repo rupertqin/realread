@@ -121,14 +121,23 @@ async function requestHtml(doFetch, url) {
  * a file the extension cannot load and get dropped by the sanitizer.
  *
  * Declaring the article's URL as <base> makes Readability absolutise against
- * the real site instead. Skipped when the page ships its own <base>.
+ * the real site instead. When the page already has a <base>, its href must be
+ * absolutised too: a relative href like "/assets/" would otherwise resolve
+ * against the extension origin and break every image on the page.
  */
 
 function injectBaseElement(html, articleUrl) {
-  if (/<base[\s>]/i.test(html)) {
-    return html;
+  const basePattern = /<base\b[^>]*>/gi;
+  let foundBase = false;
+  const withResolvedBases = html.replace(basePattern, (tag) => {
+    foundBase = true;
+    return absolutizeBaseHref(tag, articleUrl);
+  });
+  if (foundBase) {
+    return withResolvedBases;
   }
-  const tag = `<base href="${articleUrl.replace(/"/g, "&quot;")}">`;
+
+  const tag = `<base href="${escapeHtmlAttribute(articleUrl)}">`;
   if (/<head[^>]*>/i.test(html)) {
     return html.replace(/<head[^>]*>/i, (head) => head + tag);
   }
@@ -136,6 +145,33 @@ function injectBaseElement(html, articleUrl) {
     return html.replace(/<html[^>]*>/i, (root) => `${root}<head>${tag}</head>`);
   }
   return tag + html;
+}
+
+// Keep the page's own base directory intact, but anchor it to the article's
+// real URL rather than to the extension document doing the parsing.
+function absolutizeBaseHref(tag, articleUrl) {
+  const hrefPattern = /\b(href\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i;
+  if (!hrefPattern.test(tag)) {
+    return tag.replace(/^<base\b/i, `<base href="${escapeHtmlAttribute(articleUrl)}"`);
+  }
+  return tag.replace(hrefPattern, (match, prefix, doubleQuoted, singleQuoted, unquoted) => {
+    const raw = doubleQuoted ?? singleQuoted ?? unquoted ?? "";
+    let absolute;
+    try {
+      absolute = new URL(raw, articleUrl).href;
+    } catch (err) {
+      absolute = articleUrl;
+    }
+    return prefix + `"${escapeHtmlAttribute(absolute)}"`;
+  });
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function normalizeArticleUrl(url) {

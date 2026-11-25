@@ -170,6 +170,13 @@ function renderArticle(el, article, { fontFamily } = {}) {
   }
   el.innerHTML = sanitizeHtml(article.content, { baseUrl: article.url });
 
+  // Image CDNs often reject requests whose Referer is the extension origin,
+  // while a direct load (and the links above, which use noreferrer) works.
+  // Match the links so the images can load too.
+  for (const img of el.querySelectorAll("img")) {
+    img.referrerPolicy = "no-referrer";
+  }
+
   // Readability lifts the headline into `title` and strips it from `content`
   // whenever it matches the document <title>, so it has to be rendered here.
   // Skip when the article opens with its own heading, otherwise the page name
